@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    //"DeepLReswTranslator (Package)": {
+    //  "commandName": "MsixPackage"
+    //},
+    "DeepLReswTranslator (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
