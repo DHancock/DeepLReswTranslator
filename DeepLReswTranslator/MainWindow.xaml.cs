@@ -62,21 +62,22 @@ public sealed partial class MainWindow : Window
         try
         {
             // the translator object is tied to a perticular key, whether valid or not
-            Translator translator = new Translator(authKey);
-
-            List<LanguageData> source = await LoadLanguages(translator, isSource: true);
-
-            if (source.Count > 0)
+            using (Translator translator = new Translator(authKey))
             {
-                List<LanguageData> target = await LoadLanguages(translator, isSource: false);
+                List<LanguageData> source = await LoadLanguages(translator, isSource: true);
 
-                if ((target.Count > 0) && (FromLanguage.ItemsSource is null))
+                if (source.Count > 0)
                 {
-                    FromLanguage.ItemsSource = source;
-                    ToLanguage.ItemsSource = target;
+                    List<LanguageData> target = await LoadLanguages(translator, isSource: false);
 
-                    FromLanguage.SelectedIndex = source.FindIndex(x => x.Code == "en");
-                    ToLanguage.SelectedIndex = target.FindIndex(x => x.Code == "fr");
+                    if ((target.Count > 0) && (FromLanguage.ItemsSource is null))
+                    {
+                        FromLanguage.ItemsSource = source;
+                        ToLanguage.ItemsSource = target;
+
+                        FromLanguage.SelectedIndex = source.FindIndex(x => x.Code == "en");
+                        ToLanguage.SelectedIndex = target.FindIndex(x => x.Code == "fr");
+                    }
                 }
             }
         }
@@ -107,10 +108,10 @@ public sealed partial class MainWindow : Window
         {
             if (await IsDataValid())
             {
-                await using (Stream stream = await sourceFile.OpenStreamForReadAsync())
-                {
-                    XDocument? document;
+                XDocument? document;
 
+                using (Stream stream = await sourceFile.OpenStreamForReadAsync())
+                {
                     try
                     {
                         document = await XDocument.LoadAsync(stream, LoadOptions.None, CancellationToken.None);
@@ -120,26 +121,26 @@ public sealed partial class MainWindow : Window
                         await ErrorDialog("Loading source resw failed", ex);
                         return;
                     }
+                }
 
-                    if (await ValidateReswVersion(document))
+                if (await ValidateReswVersion(document))
+                {
+                    List<string> source = ParseSource(document);
+                    List<string> translated = await TranslateSource(source);
+
+                    if (translated.Count == source.Count)  // translation succeeded
                     {
-                        List<string> source = ParseSource(document);
-                        List<string> translated = await TranslateSource(source);
+                        FileSavePicker savePicker = new FileSavePicker();
+                        InitializeWithWindow.Initialize(savePicker, windowPtr);
+                        savePicker.FileTypeChoices.Add("resw file", [".resw"]);
 
-                        if (translated.Count == source.Count)  // translation succeeded
+                        savePicker.SuggestedFileName = sourceFile?.Name;
+
+                        StorageFile outputFile = await savePicker.PickSaveFileAsync();
+
+                        if (outputFile is not null)
                         {
-                            FileSavePicker savePicker = new FileSavePicker();
-                            InitializeWithWindow.Initialize(savePicker, windowPtr);
-                            savePicker.FileTypeChoices.Add("resw file", [".resw"]);
-
-                            savePicker.SuggestedFileName = sourceFile?.Name;
-
-                            StorageFile outputFile = await savePicker.PickSaveFileAsync();
-
-                            if (outputFile is not null)
-                            {
-                                await WriteToOutputResw(document, translated, outputFile);
-                            }
+                            await WriteToOutputResw(document, translated, outputFile);
                         }
                     }
                 }
@@ -220,15 +221,16 @@ public sealed partial class MainWindow : Window
                 string to = ((LanguageData)ToLanguage.SelectedItem).Code;
 
                 // the translator object is tied to a perticular key, whether valid or not
-                Translator translator = new Translator(Key.Text);
-
-                TextResult[] textResults = await translator.TranslateTextAsync(source, from, to);
-
-                results.EnsureCapacity(textResults.Length);
-
-                foreach (TextResult textResult in textResults)
+                using (Translator translator = new Translator(Key.Text))
                 {
-                    results.Add(textResult.Text);
+                    TextResult[] textResults = await translator.TranslateTextAsync(source, from, to);
+
+                    results.EnsureCapacity(textResults.Length);
+
+                    foreach (TextResult textResult in textResults)
+                    {
+                        results.Add(textResult.Text);
+                    }
                 }
             }
             catch (Exception ex)
